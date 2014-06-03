@@ -34,13 +34,7 @@ import org.pentaho.reporting.engine.classic.core.event.ReportProgressListener;
 import org.pentaho.reporting.engine.classic.core.function.OutputFunction;
 import org.pentaho.reporting.engine.classic.core.layout.AbstractRenderer;
 import org.pentaho.reporting.engine.classic.core.layout.Renderer;
-import org.pentaho.reporting.engine.classic.core.states.CollectingReportErrorHandler;
-import org.pentaho.reporting.engine.classic.core.states.IgnoreEverythingReportErrorHandler;
-import org.pentaho.reporting.engine.classic.core.states.InitialLayoutProcess;
-import org.pentaho.reporting.engine.classic.core.states.LayoutProcess;
-import org.pentaho.reporting.engine.classic.core.states.ProcessStateHandle;
-import org.pentaho.reporting.engine.classic.core.states.ReportProcessingErrorHandler;
-import org.pentaho.reporting.engine.classic.core.states.ReportStateKey;
+import org.pentaho.reporting.engine.classic.core.states.*;
 import org.pentaho.reporting.engine.classic.core.states.process.PendingPagesHandler;
 import org.pentaho.reporting.engine.classic.core.states.process.ProcessState;
 import org.pentaho.reporting.engine.classic.core.states.process.RestartOnNewPageHandler;
@@ -1654,6 +1648,8 @@ public abstract class AbstractReportProcessor implements ReportProcessor
       AbstractReportProcessor.logger.debug(new MemoryUsageMessage(System.identityHashCode(
           Thread.currentThread()) + ": Report processing time: Starting: "));
     }
+
+    ReportProgressEvent reportFinishedEvent = null;
     try
     {
       final long startTime = System.currentTimeMillis();
@@ -1684,6 +1680,22 @@ public abstract class AbstractReportProcessor implements ReportProcessor
       {
         state = processPage(state, true);
       }
+
+      PageState startPageState = getLogicalPageState(0);
+      ReportState reportState;
+      if( startPageState != null &&
+              (reportState = startPageState.getReportState()) != null ) {
+
+        int maximumLevel = -1;
+        int level = -1;
+        int maximumRow = reportState.getNumberOfRows();
+        int page = this.getPhysicalPageCount();
+        int activity = ReportProgressEvent.GENERATING_CONTENT;
+        int processingRow = reportState.getCurrentRow();
+
+        reportFinishedEvent = new ReportProgressEvent( this, activity, processingRow, maximumRow, page, level, maximumLevel );
+      }
+
       final long endTime = System.currentTimeMillis();
       if (AbstractReportProcessor.logger.isDebugEnabled())
       {
@@ -1708,7 +1720,11 @@ public abstract class AbstractReportProcessor implements ReportProcessor
           Thread.currentThread()) + ": Report processing failed.", e);
       throw new ReportProcessingException("Failed to process the report", e);
     }
-    fireProcessingFinished(new ReportProgressEvent(this, getPhysicalPageCount()));
+
+    if ( reportFinishedEvent == null) {
+      reportFinishedEvent = new ReportProgressEvent( this, getPhysicalPageCount() );
+    }
+    fireProcessingFinished( reportFinishedEvent );
     if (AbstractReportProcessor.logger.isDebugEnabled())
     {
       AbstractReportProcessor.logger.debug(System.identityHashCode(
